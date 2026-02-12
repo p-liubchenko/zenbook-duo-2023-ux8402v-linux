@@ -5,17 +5,31 @@ Features:
 * battery limiter (any)
 * touch/pen panels mapping (GNOME-specific, requires GNOME 46 or a backported Mutter patch)
 * automatic bottom screen on/off (GNOME-specific)
-* automatic rotation (GNOME-specific, not supported in this fork)
+
+## tested on
+- product: Zenbook UX8402VU_UX8402VU 
+- system_v: 1.0       
+- bios_v: UX8402VU.300
+- bios_release: 04/27/2023
+- Ubuntu 25.10
+- GNOME 49 (Wayland)
+- Kernel 6.17.0-14-generic
+- Top panel: eDP-1 (SDC 0x4190) 2880x1800
+- Bottom panel: DP-1 (BOE 0x0a8d) 2880x864
+- GNOME scaling: scaling-factor=0, text-scaling-factor=1.0
+- Mutter experimental features: scale-monitor-framebuffer, xwayland-native-scaling
 
 ## panel mapping
 
-`duo set-tablet-mapping` will set necessary dconf settings, but for them to work you need a Mutter with a patch from https://gitlab.gnome.org/GNOME/mutter/-/merge_requests/3556 and libwacom with this patch https://github.com/linuxwacom/libwacom/pull/640 . Both are merged upstream, so you can just wait.
+`duo set-tablet-mapping` sets GNOME per-device mappings (touch + stylus) for the top and bottom panels.
+
+On GNOME Wayland, the mapping is only honored if Mutter includes the tablet mapping MR https://gitlab.gnome.org/GNOME/mutter/-/merge_requests/3556 and libwacom includes https://github.com/linuxwacom/libwacom/pull/640 . If mappings are written but ignored, update Mutter/libwacom.
 
 ## bottom screen toggle on GNOME
 
-Make sure gnome-monitor-config, usbutils and inotify-tools are installed, the script relies on the `gnome-monitor-config`, `lsusb` and `inotifywait` commands from them.
+Make sure usbutils and inotify-tools are installed; the script relies on the `lsusb` and `inotifywait` commands from them.
 
-On Ubuntu 25.10, `gnome-monitor-config` is not packaged. The script falls back to a Mutter DBus helper (`duo_mutter.py`) that uses PyGObject, so install `python3-gi` if it is missing.
+If `gnome-monitor-config` is available it will be used for display changes. Otherwise the script falls back to a Mutter DBus helper (`duo_mutter.py`) that uses PyGObject.
 
 Before the next steps, you may need or want to change the scaling settings or change the config at the top of `duo` based on the version of the duo that you have (1080p vs 3k display models)
 
@@ -24,6 +38,22 @@ For automatic screen management run `duo watch-displays` somewhere at the start 
 For manual screen management there are `duo top`, `duo bottom`, `duo both` and `duo toggle` (toggles between top and both) commands.
 
 In addition there's also `duo toggle-bottom-touch` to toggle touch for the bottom screen, so you can draw with a pen while resting your hand on the screen.
+
+### bottom touchpad gestures
+
+The bottom panel exposes a separate touchpad-capable device, so GNOME enables gestures there. To disable gestures only for the bottom panel while keeping the main touchpad working, add a libinput quirk:
+
+```
+sudo mkdir -p /etc/libinput
+sudo tee /etc/libinput/local-overrides.quirks >/dev/null <<'EOF'
+[ELAN9009 Touchpad Quirk]
+MatchName=ELAN9009:00 04F3:2F2A Touchpad
+MatchUdevType=touchpad
+AttrEventCodeDisable=BTN_TOOL_FINGER;BTN_TOOL_DOUBLETAP;BTN_TOOL_TRIPLETAP;BTN_TOOL_QUADTAP;BTN_TOOL_QUINTTAP
+EOF
+```
+
+Reboot to apply the quirk.
 
 ### second display button (Ubuntu 25.10)
 
@@ -56,30 +86,9 @@ systemctl --user daemon-reload
 systemctl --user enable --now duo-button.service
 ```
 
-## automatic rotation
-
-Not supported in this fork. The rotation logic was removed.
-
 ## brightness sync
 
-Brightness control requires root permissions. I prefer to have sudo with a password by default, so I use a hack to have a NOPASSWD sudo for /usr/bin/env which allows to execute any command. Line in /etc/sudoers looks like `%wheel  ALL=(ALL:ALL)    NOPASSWD: /usr/bin/env`. On NixOS the relevant part of the config is this:
-
-```
-  security.sudo = {
-    enable = true;
-    extraRules = [{
-      commands = [
-        {
-          command = "/usr/bin/env";
-          options = [ "NOPASSWD" ];
-        }
-      ];
-      groups = [ "wheel" ];
-    }];
-  };
-```
-
-Once the sudo setup is done you can either run `duo sync-backlight` to sync it once (you may want to bind it to some hotkey) or you can run `duo watch-backlight` at login and it will keep syncing your brightness from the top display to the bottom one.
+Brightness control requires root permissions. After configuring sudo, you can run `duo sync-backlight` once or `duo watch-backlight` at login to keep syncing brightness from the top display to the bottom one.
 
 For UX8402V (2023) the bottom backlight is usually `asus_screenpad`. The script now auto-detects the target backlight, so you should not need to change it manually.
 
@@ -101,11 +110,4 @@ duo bat-limit 75
 
 Requires python3 and pyusb installed. `duo set-kb-backlight <0|1|2|3>` configures keyboard backlight, with 0 meaning off and 3 meaning max brightness.
 
-## Notes concerning usage on Fedora 40
-
-The steps described above work on Fedora 40 with the following specific changes:
-Prerequisities:
-`sudo dnf install lm_sensors gnome-monitor-config inotofy-tools`
-Libwacom files elan-425a.tablet and elan-425b.tablet should be copied to /usr/share/libwacom
-For brightness sync to work properly, line 10 of the duo.sh should be modified to `backlight=card1-eDP-2-backlight`
 

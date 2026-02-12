@@ -462,24 +462,6 @@ case "$1" in
     fi
     bottom_backlight_restore
     ;;
-  left-up)
-    if have-gnome-monitor-config; then
-      gnome-monitor-config set \
-        -LpM eDP-2 -m $preferred_resolution -s $ui_scale -t left  -x 0         -y 0 \
-        -LM  eDP-1 -m $preferred_resolution -s $ui_scale -t left  -x $y_offset -y 0
-    else
-      mutter-helper left-up
-    fi
-    ;;
-  right-up)
-    if have-gnome-monitor-config; then
-      gnome-monitor-config set \
-        -LM  eDP-1 -m $preferred_resolution -s $ui_scale -t right -x 0         -y 0 \
-        -LpM eDP-2 -m $preferred_resolution -s $ui_scale -t right -x $y_offset -y 0
-    else
-      mutter-helper right-up
-    fi
-    ;;
   status-internal)
     if have-gnome-monitor-config; then
       internal_monitors="$(gnome-monitor-config list|grep -E "Monitor \\[ eDP-. \\] ON")"

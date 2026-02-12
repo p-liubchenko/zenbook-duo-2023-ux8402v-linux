@@ -278,22 +278,6 @@ def main():
         apply_layout(proxy, serial, layout, layout_mode)
         return 0
 
-    if action == "left-up":
-        layout = [
-            build_logical_entry(0, 0, scale, 1, True, bottom["connector"], mode_bottom),
-            build_logical_entry(y_offset, 0, scale, 1, False, top["connector"], mode_top),
-        ]
-        apply_layout(proxy, serial, layout, layout_mode)
-        return 0
-
-    if action == "right-up":
-        layout = [
-            build_logical_entry(0, 0, scale, 3, True, top["connector"], mode_top),
-            build_logical_entry(y_offset, 0, scale, 3, False, bottom["connector"], mode_bottom),
-        ]
-        apply_layout(proxy, serial, layout, layout_mode)
-        return 0
-
     print(f"Unknown action: {action}", file=sys.stderr)
     return 2
 
