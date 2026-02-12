@@ -22,6 +22,116 @@ else
   ui_scale=2
   y_offset=1800
 fi
+
+# Touch/stylus device IDs; defaults are overridden by auto-detection when possible.
+top_touch_ids=("04f3:2f29" "04f3:425b")
+bottom_touch_ids=("04f3:2f2a" "04f3:425a")
+top_monitor_connector="eDP-1"
+bottom_monitor_connector="eDP-2"
+top_monitor_vendor="SDC"
+top_monitor_product="0x419d"
+top_monitor_serial="0x00000000"
+bottom_monitor_vendor="SDC"
+bottom_monitor_product="0x419d"
+bottom_monitor_serial="0x00000000"
+
+function detect_touch_ids {
+  if ! command -v libinput >/dev/null 2>&1; then
+    return
+  fi
+
+  declare -A id_area
+  declare -A id_seen
+  local current_id=""
+  local current_size=""
+  local current_caps=""
+
+  while IFS= read -r line; do
+    case "$line" in
+      "Device:"*)
+        current_id=""
+        current_size=""
+        current_caps=""
+        ;;
+      "Id:"*)
+        current_id="$(echo "$line" | awk '{print $2}')"
+        ;;
+      "Size:"*)
+        current_size="$(echo "$line" | awk '{print $2}')"
+        ;;
+      "Capabilities:"*)
+        current_caps="${line#Capabilities:}"
+        ;;
+    esac
+
+    if [ -n "$current_id" ] && [ -n "$current_size" ] && [ -n "$current_caps" ]; then
+      if [[ "$current_caps" =~ (touch|tablet) ]] && [[ "$current_id" =~ ^i2c: ]]; then
+        if [ -z "${id_seen[$current_id]:-}" ]; then
+          local w h area
+          w="${current_size%x*}"
+          h="${current_size#*x}"
+          if [[ "$w" =~ ^[0-9]+$ ]] && [[ "$h" =~ ^[0-9]+$ ]]; then
+            area=$((w * h))
+            id_area[$current_id]="$area"
+            id_seen[$current_id]=1
+          fi
+        fi
+      fi
+    fi
+  done < <(libinput list-devices 2>/dev/null)
+
+  if [ "${#id_area[@]}" -lt 2 ]; then
+    return
+  fi
+
+  local biggest_id=""
+  local smallest_id=""
+  local biggest_area=0
+  local smallest_area=99999999
+  local id area
+  for id in "${!id_area[@]}"; do
+    area="${id_area[$id]}"
+    if [ "$area" -gt "$biggest_area" ]; then
+      biggest_area="$area"
+      biggest_id="$id"
+    fi
+    if [ "$area" -lt "$smallest_area" ]; then
+      smallest_area="$area"
+      smallest_id="$id"
+    fi
+  done
+
+  if [ -n "$biggest_id" ] && [ -n "$smallest_id" ] && [ "$biggest_id" != "$smallest_id" ]; then
+    top_touch_ids=("${biggest_id#i2c:}")
+    bottom_touch_ids=("${smallest_id#i2c:}")
+  fi
+}
+
+function detect_monitor_ids {
+  local info
+  info="$(mutter-helper monitor-ids 2>/dev/null)" || return
+  if [ -z "$info" ]; then
+    return
+  fi
+
+  local role connector vendor product serial
+  while read -r role connector vendor product serial; do
+    case "$role" in
+      top)
+        top_monitor_connector="$connector"
+        top_monitor_vendor="$vendor"
+        top_monitor_product="$product"
+        top_monitor_serial="$serial"
+        ;;
+      bottom)
+        bottom_monitor_connector="$connector"
+        bottom_monitor_vendor="$vendor"
+        bottom_monitor_product="$product"
+        bottom_monitor_serial="$serial"
+        ;;
+    esac
+  done <<< "$info"
+}
 function pick-source-backlight {
   if [ -d /sys/class/backlight/intel_backlight ]; then
     echo intel_backlight
@@ -277,20 +387,34 @@ function active-external-displays {
   fi
 }
 
-function get-orientation {
-  gdbus call --system --dest net.hadess.SensorProxy --object-path /net/hadess/SensorProxy --method org.freedesktop.DBus.Properties.Get net.hadess.SensorProxy AccelerometerOrientation | sed "s/.*<'\([^']*\)'>.*/\1/"
-}
-
 function keyboard-is-attached {
   lsusb|grep 0b05:1b2c
 }
 
+function set_peripheral_output {
+  local type="$1"
+  local device_id="$2"
+  local output="$3"
+  local vendor="$4"
+  local product="$5"
+  local serial="$6"
+  local value
+  value="['${vendor}', '${product}', '${serial}', '${output}']"
+
+  # GNOME 46+ uses relocatable schemas under org.gnome.desktop.peripherals.*
+  gsettings set "org.gnome.desktop.peripherals.${type}:/org/gnome/desktop/peripherals/${type}/${device_id}/" \
+    output "$value" 2>/dev/null && return
+
+  # Older setups used non-relocatable dconf paths under .../touchscreens and .../tablets
+  dconf write "/org/gnome/desktop/peripherals/${type}s/${device_id}/output" "$value" 2>/dev/null
+}
+
 case "$1" in
   watch-displays)
-    "$0" "$(get-orientation)"
+    "$0" normal
     while inotifywait -e attrib /dev/bus/usb/*/ ; do
       if ! external-display-connected; then
-        "$0" "$(get-orientation)"
+        "$0" normal
       fi
     done
     ;;
@@ -363,7 +487,6 @@ case "$1" in
         0) echo "none" ;;
         1) case "$(echo "$internal_monitors"|grep ON)" in
              "Monitor [ eDP-1 ] ON") echo top ;;
-             "Monitor [ eDP-2 ] ON") echo bottom ;;
            esac ;;
         2) echo "both" ;;
       esac
@@ -403,20 +526,39 @@ case "$1" in
     fi
     ;;
   set-tablet-mapping)
-    for type in tablets touchscreens; do
-      dconf write "/org/gnome/desktop/peripherals/${type}/04f3:425b/output" \
-        "['SDC', '0x419d', '0x00000000', 'eDP-1']"
-      dconf write "/org/gnome/desktop/peripherals/${type}/04f3:425a/output" \
-        "['SDC', '0x419d', '0x00000000', 'eDP-2']"
+    detect_touch_ids
+    detect_monitor_ids
+    for type in tablet touchscreen; do
+      for id in "${top_touch_ids[@]}"; do
+        set_peripheral_output "$type" "$id" "$top_monitor_connector" \
+          "$top_monitor_vendor" "$top_monitor_product" "$top_monitor_serial"
+      done
+      for id in "${bottom_touch_ids[@]}"; do
+        set_peripheral_output "$type" "$id" "$bottom_monitor_connector" \
+          "$bottom_monitor_vendor" "$bottom_monitor_product" "$bottom_monitor_serial"
+      done
     done
     ;;
   toggle-bottom-touch)
-    path="/org/gnome/desktop/peripherals/touchscreens/04f3:425a/output"
-    if [ -z "$(dconf read "$path")" ]; then
-      dconf write "$path" "['SDC', '0x419d', '0x00000000', 'eDP-2']"
-    else
-      dconf reset "$path"
-    fi
+    detect_touch_ids
+    detect_monitor_ids
+    for id in "${bottom_touch_ids[@]}"; do
+      if gsettings writable "org.gnome.desktop.peripherals.touchscreen:/org/gnome/desktop/peripherals/touchscreen/${id}/" output >/dev/null 2>&1; then
+        path="org.gnome.desktop.peripherals.touchscreen:/org/gnome/desktop/peripherals/touchscreen/${id}/"
+        if [ -z "$(gsettings get "$path" output 2>/dev/null)" ] || [ "$(gsettings get "$path" output 2>/dev/null)" = "'[]'" ]; then
+          gsettings set "$path" output "['${bottom_monitor_vendor}', '${bottom_monitor_product}', '${bottom_monitor_serial}', '${bottom_monitor_connector}']"
+        else
+          gsettings reset "$path" output
+        fi
+      else
+        legacy_path="/org/gnome/desktop/peripherals/touchscreens/${id}/output"
+        if [ -z "$(dconf read "$legacy_path" 2>/dev/null)" ]; then
+          dconf write "$legacy_path" "['${bottom_monitor_vendor}', '${bottom_monitor_product}', '${bottom_monitor_serial}', '${bottom_monitor_connector}']"
+        else
+          dconf reset "$legacy_path"
+        fi
+      fi
+    done
     ;;
   bat-limit)
     limit="$(resolve_bat_limit "${2:-}")" || {
@@ -446,12 +588,5 @@ case "$1" in
       "$0" sync-backlight
     done
     ;;
-  watch-rotation)
-    monitor-sensor --accel |
-      stdbuf -oL grep orientation |
-      stdbuf -oL cut -d: -f2 |
-      stdbuf -oL sed 's/[ )]//g' |
-      xargs -I '{}' stdbuf -oL "$0" '{}'
-    ;;
-  *) echo "Usage: duo <top|bottom|both|set-displays|toggle|status|set-tablet-mapping|bat-limit|bat-safe|bat-full|sync-backlight|set-kb-backlight|watch-backlight|watch-rotation|watch-displays>"
+  *) echo "Usage: duo <top|bottom|both|set-displays|toggle|status|set-tablet-mapping|bat-limit|bat-safe|bat-full|sync-backlight|set-kb-backlight|watch-backlight|watch-displays>"
 esac

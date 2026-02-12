@@ -85,6 +85,15 @@ def parse_mode_height(mode_id):
         return None
 
 
+def format_hex(value, width):
+    if isinstance(value, str):
+        return value
+    try:
+        return f"0x{int(value):0{width}x}"
+    except Exception:
+        return str(value)
+
+
 def guess_top_bottom(monitors):
     env_top = os.environ.get("DUO_TOP_CONNECTOR")
     env_bottom = os.environ.get("DUO_BOTTOM_CONNECTOR")
@@ -228,6 +237,17 @@ def main():
         if action == "external-display-connected":
             print("yes" if external_on else "no")
             return 0
+
+    if action == "monitor-ids":
+        for role, monitor in (("top", top), ("bottom", bottom)):
+            if not monitor:
+                continue
+            connector = monitor["connector"]
+            vendor = monitor["vendor"]
+            product = format_hex(monitor["product"], 4)
+            serial = format_hex(monitor["serial"], 8)
+            print(f"{role} {connector} {vendor} {product} {serial}")
+        return 0
 
     if not top or not bottom:
         print("Could not determine top/bottom monitors", file=sys.stderr)

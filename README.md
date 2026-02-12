@@ -5,7 +5,7 @@ Features:
 * battery limiter (any)
 * touch/pen panels mapping (GNOME-specific, requires GNOME 46 or a backported Mutter patch)
 * automatic bottom screen on/off (GNOME-specific)
-* automatic rotation (GNOME-specific)
+* automatic rotation (GNOME-specific, not supported in this fork)
 
 ## panel mapping
 
@@ -58,7 +58,7 @@ systemctl --user enable --now duo-button.service
 
 ## automatic rotation
 
-Make sure iio-sensor-proxy is installed, the script relies on `monitor-sensor` command from it. Once it's installed and you followed the steps above for dualscreen setup just run `duo watch-rotation` somewhere at the start of your GNOME session.
+Not supported in this fork. The rotation logic was removed.
 
 ## brightness sync
 
