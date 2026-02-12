@@ -19,7 +19,7 @@ GitHub Support can remove the fork relationship while preserving all your work:
    - Go to https://support.github.com/contact
    - Select "Account and Profile" or "Repositories"
    - Explain that you want to detach your repository from its fork status
-   - Provide your repository URL: `https://github.com/p-liubchenko/zenbook-duo-2023-ux8402v-linux`
+   - Provide your repository URL: `https://github.com/YOUR_USERNAME/YOUR_REPO_NAME`
    - Explain why (e.g., "The repository has evolved significantly and changed its specialization")
 
 2. **Wait for GitHub to process**:
@@ -50,7 +50,7 @@ If you need an immediate solution or prefer full control, you can create a new i
 2. **Mirror your current repository**:
    ```bash
    # Clone your current repository as a bare repository
-   git clone --bare https://github.com/p-liubchenko/zenbook-duo-2023-ux8402v-linux.git temp-repo
+   git clone --bare https://github.com/YOUR_USERNAME/YOUR_CURRENT_REPO.git temp-repo
    
    # Push to the new repository
    cd temp-repo
@@ -89,12 +89,19 @@ For users comfortable with GitHub's API, you can attempt to use the API to modif
 
 ## Recommended Approach
 
-**For this repository (`zenbook-duo-2023-ux8402v-linux`), we recommend Method 1 (GitHub Support)**:
+**We recommend Method 1 (GitHub Support) when**:
 
-1. The repository has significant value with its stars, issues, and community
-2. The repository has evolved to provide Zenbook Duo 2023 Linux support with unique features
-3. Preserving the existing repository history and community is important
-4. The small wait time for GitHub Support is worth preserving all existing data
+1. Your repository has significant value with stars, issues, and community engagement
+2. You want to preserve all existing data (stars, forks, issues, pull requests)
+3. You're willing to wait 1-2 business days for GitHub Support to process the request
+4. Your repository has truly evolved beyond the original fork's purpose
+
+**Consider Method 2 (New Repository) when**:
+
+1. You need an immediate solution
+2. Your repository doesn't have significant community engagement yet
+3. You prefer a fresh start without the old fork's history
+4. You're comfortable updating external links and references
 
 ## After Detaching
 
