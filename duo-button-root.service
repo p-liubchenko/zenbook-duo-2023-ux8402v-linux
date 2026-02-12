@@ -1,0 +1,14 @@
+[Unit]
+Description=Zenbook Duo button listener (root)
+After=graphical.target
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=1
+ExecStart=/usr/bin/env python3 /path/to/repo/duo_button_listener.py
+Environment=DUO_SCRIPT=/path/to/repo/duo
+Environment=DUO_RUN_AS_USER=auto
+
+[Install]
+WantedBy=multi-user.target

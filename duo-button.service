@@ -1,0 +1,13 @@
+[Unit]
+Description=Zenbook Duo button listener
+After=graphical-session.target
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=1
+ExecStart=%h/CHANGE/THIS/PATH/duo_button_listener.py
+Environment=DUO_SCRIPT=%h/CHANGE/THIS/PATH/duo
+
+[Install]
+WantedBy=default.target

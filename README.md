@@ -15,6 +15,8 @@ Features:
 
 Make sure gnome-monitor-config, usbutils and inotify-tools are installed, the script relies on the `gnome-monitor-config`, `lsusb` and `inotifywait` commands from them.
 
+On Ubuntu 25.10, `gnome-monitor-config` is not packaged. The script falls back to a Mutter DBus helper (`duo_mutter.py`) that uses PyGObject, so install `python3-gi` if it is missing.
+
 Before the next steps, you may need or want to change the scaling settings or change the config at the top of `duo` based on the version of the duo that you have (1080p vs 3k display models)
 
 For automatic screen management run `duo watch-displays` somewhere at the start of your GNOME session.
@@ -22,6 +24,37 @@ For automatic screen management run `duo watch-displays` somewhere at the start 
 For manual screen management there are `duo top`, `duo bottom`, `duo both` and `duo toggle` (toggles between top and both) commands.
 
 In addition there's also `duo toggle-bottom-touch` to toggle touch for the bottom screen, so you can draw with a pen while resting your hand on the screen.
+
+### second display button (Ubuntu 25.10)
+
+If the Asus WMI hotkey still reports `KEY_UNKNOWN`, you can use a small listener that watches the hotkey device and runs `duo toggle` directly. It relies on `python3-evdev` and requires access to `/dev/input`.
+
+Install dependency:
+
+```
+sudo apt install python3-evdev
+```
+
+Add your user to the `input` group and re-login:
+
+```
+sudo usermod -aG input $USER
+```
+
+Copy the service file and edit paths:
+
+```
+mkdir -p ~/.config/systemd/user
+cp /path/to/repo/duo-button.service ~/.config/systemd/user/
+sed -i "s|%h/CHANGE/THIS/PATH|/path/to/repo|g" ~/.config/systemd/user/duo-button.service
+```
+
+Enable and start the service:
+
+```
+systemctl --user daemon-reload
+systemctl --user enable --now duo-button.service
+```
 
 ## automatic rotation
 
@@ -47,6 +80,8 @@ Brightness control requires root permissions. I prefer to have sudo with a passw
 ```
 
 Once the sudo setup is done you can either run `duo sync-backlight` to sync it once (you may want to bind it to some hotkey) or you can run `duo watch-backlight` at login and it will keep syncing your brightness from the top display to the bottom one.
+
+For UX8402V (2023) the bottom backlight is usually `asus_screenpad`. The script now auto-detects the target backlight, so you should not need to change it manually.
 
 For most linux distros there is an included systemd service file: `brightness-sync.service` that just needs `/path/to/duo` changed before moving it to `/etc/systemd/system` to enable brightness sync in the background.
 

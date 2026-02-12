@@ -22,7 +22,189 @@ else
   ui_scale=2
   y_offset=1800
 fi
-backlight=card1-eDP-2-backlight
+function pick-source-backlight {
+  if [ -d /sys/class/backlight/intel_backlight ]; then
+    echo intel_backlight
+    return
+  fi
+
+  for path in /sys/class/backlight/*; do
+    echo "$(basename "$path")"
+    return
+  done
+}
+
+function pick-target-backlight {
+  for candidate in asus_screenpad card1-eDP-2-backlight card0-eDP-2-backlight; do
+    if [ -d "/sys/class/backlight/$candidate" ]; then
+      echo "$candidate"
+      return
+    fi
+  done
+
+  for path in /sys/class/backlight/*; do
+    name="$(basename "$path")"
+    if [ "$name" != "intel_backlight" ]; then
+      echo "$name"
+      return
+    fi
+  done
+
+  echo intel_backlight
+}
+
+source_backlight="$(pick-source-backlight)"
+backlight="$(pick-target-backlight)"
+backlight_state_file="/tmp/duo-bottom-backlight"
+backlight_power_file="/tmp/duo-bottom-bl-power"
+
+function find_bottom_connector_path {
+  for path in /sys/class/drm/card*-DP-*/status; do
+    if [ -f "$path" ]; then
+      echo "${path%/status}"
+      return
+    fi
+  done
+}
+
+function bottom_connector_on {
+  if [ "${DUO_DRM_TOGGLE:-0}" != "1" ]; then
+    return
+  fi
+  local conn
+  conn="$(find_bottom_connector_path)"
+  if [ -n "$conn" ]; then
+    if [ -f "$conn/power/control" ]; then
+      sysfs_write "$conn/power/control" on
+    fi
+    if [ -f "$conn/enabled" ]; then
+      sysfs_write "$conn/enabled" enabled
+    fi
+    if [ -f "$conn/dpms" ]; then
+      sysfs_write "$conn/dpms" On
+    fi
+  fi
+}
+
+function bottom_connector_off {
+  if [ "${DUO_DRM_TOGGLE:-0}" != "1" ]; then
+    return
+  fi
+  local conn
+  conn="$(find_bottom_connector_path)"
+  if [ -n "$conn" ]; then
+    if [ -f "$conn/dpms" ]; then
+      sysfs_write "$conn/dpms" Off
+    fi
+    if [ -f "$conn/enabled" ]; then
+      sysfs_write "$conn/enabled" disabled
+    fi
+    if [ -f "$conn/power/control" ]; then
+      sysfs_write "$conn/power/control" auto
+    fi
+  fi
+}
+
+function bottom_backlight_supported {
+  [ "$backlight" != "$source_backlight" ]
+}
+
+function bottom_backlight_off {
+  if ! bottom_backlight_supported; then
+    return
+  fi
+
+  local path="/sys/class/backlight/$backlight/brightness"
+  local bl_power="/sys/class/backlight/$backlight/bl_power"
+  if [ -f "$path" ]; then
+    cat "$path" > "$backlight_state_file"
+    sysfs_write "$path" 0
+  fi
+  if [ -f "$bl_power" ]; then
+    cat "$bl_power" > "$backlight_power_file"
+    sysfs_write "$bl_power" 4
+  fi
+}
+
+function bottom_backlight_restore {
+  if ! bottom_backlight_supported; then
+    return
+  fi
+
+  local path="/sys/class/backlight/$backlight/brightness"
+  local bl_power="/sys/class/backlight/$backlight/bl_power"
+  local restored=0
+  if [ -f "$backlight_state_file" ]; then
+    local saved
+    saved="$(cat "$backlight_state_file")"
+    if [ -n "$saved" ] && [ "$saved" -gt 0 ]; then
+      sysfs_write "$path" "$saved"
+      restored=1
+    fi
+  fi
+  if [ "$restored" -eq 0 ]; then
+    "$0" sync-backlight
+  fi
+  if [ -f "$bl_power" ]; then
+    if [ -f "$backlight_power_file" ]; then
+      sysfs_write "$bl_power" "$(cat "$backlight_power_file")"
+    else
+      sysfs_write "$bl_power" 0
+    fi
+  fi
+
+  # Ensure bottom panel matches top after wake.
+  "$0" sync-backlight
+}
+
+function bottom_backlight_is_off {
+  if ! bottom_backlight_supported; then
+    return 1
+  fi
+
+  local bl_power="/sys/class/backlight/$backlight/bl_power"
+  local brightness="/sys/class/backlight/$backlight/brightness"
+  if [ -f "$bl_power" ] && [ "$(cat "$bl_power")" = "4" ]; then
+    return 0
+  fi
+  if [ -f "$brightness" ] && [ "$(cat "$brightness")" = "0" ]; then
+    return 0
+  fi
+  return 1
+}
+
+function have-gnome-monitor-config {
+  command -v gnome-monitor-config > /dev/null 2>&1
+}
+
+function mutter-helper {
+  local script
+  script="$(dirname "$(realpath "$0")")/duo_mutter.py"
+  if [ "$(id -u)" -eq 0 ] && [ -n "${DUO_RUN_AS_USER:-}" ]; then
+    local uid
+    uid="$(id -u "$DUO_RUN_AS_USER" 2>/dev/null)"
+    if [ -n "$uid" ]; then
+      if [ -n "${DUO_MUTTER_UI_SCALE:-}" ] || [ -n "${DUO_MUTTER_Y_OFFSET:-}" ]; then
+        DUO_UI_SCALE="${DUO_MUTTER_UI_SCALE:-}" DUO_Y_OFFSET="${DUO_MUTTER_Y_OFFSET:-}" \
+          XDG_RUNTIME_DIR="/run/user/$uid" \
+          DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$uid/bus" \
+          runuser -u "$DUO_RUN_AS_USER" -- python3 "$script" "$@"
+      else
+        XDG_RUNTIME_DIR="/run/user/$uid" \
+          DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$uid/bus" \
+          runuser -u "$DUO_RUN_AS_USER" -- python3 "$script" "$@"
+      fi
+      return
+    fi
+  fi
+
+  if [ -n "${DUO_MUTTER_UI_SCALE:-}" ] || [ -n "${DUO_MUTTER_Y_OFFSET:-}" ]; then
+    DUO_UI_SCALE="${DUO_MUTTER_UI_SCALE:-}" DUO_Y_OFFSET="${DUO_MUTTER_Y_OFFSET:-}" \
+      python3 "$script" "$@"
+  else
+    python3 "$script" "$@"
+  fi
+}
 
 # 1080p model
 #preferred_resolution="1920x1200@60.003"
@@ -34,12 +216,44 @@ function suenv {
   sudo /usr/bin/env "$@"
 }
 
+function sysfs_write {
+  local path="$1"
+  local value="$2"
+  if [ -w "$path" ]; then
+    echo "$value" > "$path"
+  elif [ -w "$(dirname "$path")" ]; then
+    echo "$value" | sudo -n /usr/bin/env tee "$path" > /dev/null 2>&1
+  fi
+}
+
+function clamp_backlight_value {
+  local value="$1"
+  local max_path="/sys/class/backlight/$backlight/max_brightness"
+  if [ -f "$max_path" ]; then
+    local max
+    max="$(cat "$max_path")"
+    if [ -n "$max" ] && [ "$value" -gt "$max" ]; then
+      echo "$max"
+      return
+    fi
+  fi
+  echo "$value"
+}
+
 function external-display-connected {
-  [ "$(gnome-monitor-config list|grep display-name|grep -v 'Built-in display'|wc -l)" != "0" ]
+  if have-gnome-monitor-config; then
+    [ "$(gnome-monitor-config list|grep display-name|grep -v 'Built-in display'|wc -l)" != "0" ]
+  else
+    [ "$(mutter-helper external-display-connected)" = "yes" ]
+  fi
 }
 
 function active-external-displays {
-  gnome-monitor-config list|grep -vE 'eDP-[12]'|sed -nE 's/Monitor \[ (.+) \] ON/\1/p'
+  if have-gnome-monitor-config; then
+    gnome-monitor-config list|grep -vE 'eDP-[12]'|sed -nE 's/Monitor \[ (.+) \] ON/\1/p'
+  else
+    mutter-helper active-external-displays
+  fi
 }
 
 function get-orientation {
@@ -72,38 +286,74 @@ case "$1" in
     fi
     ;;
   top)
-    gnome-monitor-config set \
-      -LpM eDP-1 -m $preferred_resolution  -s $ui_scale -x 0 -y 0
+    bottom_connector_off
+    if have-gnome-monitor-config; then
+      gnome-monitor-config set \
+        -LpM eDP-1 -m $preferred_resolution  -s $ui_scale -x 0 -y 0
+    else
+      # Keep bottom display in layout to avoid it disconnecting in DRM.
+      mutter-helper both
+    fi
+    bottom_backlight_off
     ;;
   both)
-    gnome-monitor-config set \
-      -LpM eDP-1 -m $preferred_resolution -s $ui_scale -x 0 -y 0 \
-      -LM  eDP-2 -m $preferred_resolution -s $ui_scale -x 0 -y $y_offset
+    bottom_connector_on
+    if have-gnome-monitor-config; then
+      gnome-monitor-config set \
+        -LpM eDP-1 -m $preferred_resolution -s $ui_scale -x 0 -y 0 \
+        -LM  eDP-2 -m $preferred_resolution -s $ui_scale -x 0 -y $y_offset
+    else
+      mutter-helper both
+    fi
+    bottom_backlight_restore
     ;;
   bottom)
-    gnome-monitor-config set \
-      -LpM eDP-2 -m $preferred_resolution -s $ui_scale -x 0 -y 0
+    bottom_connector_on
+    if have-gnome-monitor-config; then
+      gnome-monitor-config set \
+        -LpM eDP-2 -m $preferred_resolution -s $ui_scale -x 0 -y 0
+    else
+      mutter-helper bottom
+    fi
+    bottom_backlight_restore
     ;;
   left-up)
-    gnome-monitor-config set \
-      -LpM eDP-2 -m $preferred_resolution -s $ui_scale -t left  -x 0         -y 0 \
-      -LM  eDP-1 -m $preferred_resolution -s $ui_scale -t left  -x $y_offset -y 0
+    if have-gnome-monitor-config; then
+      gnome-monitor-config set \
+        -LpM eDP-2 -m $preferred_resolution -s $ui_scale -t left  -x 0         -y 0 \
+        -LM  eDP-1 -m $preferred_resolution -s $ui_scale -t left  -x $y_offset -y 0
+    else
+      mutter-helper left-up
+    fi
     ;;
   right-up)
-    gnome-monitor-config set \
-      -LM  eDP-1 -m $preferred_resolution -s $ui_scale -t right -x 0         -y 0 \
-      -LpM eDP-2 -m $preferred_resolution -s $ui_scale -t right -x $y_offset -y 0
+    if have-gnome-monitor-config; then
+      gnome-monitor-config set \
+        -LM  eDP-1 -m $preferred_resolution -s $ui_scale -t right -x 0         -y 0 \
+        -LpM eDP-2 -m $preferred_resolution -s $ui_scale -t right -x $y_offset -y 0
+    else
+      mutter-helper right-up
+    fi
     ;;
   status-internal)
-    internal_monitors="$(gnome-monitor-config list|grep -E "Monitor \\[ eDP-. \\] ON")"
-    case "$(echo "$internal_monitors"|grep -v -E "^$"|wc -l)" in
-      0) echo "none" ;;
-      1) case "$(echo "$internal_monitors"|grep ON)" in
-           "Monitor [ eDP-1 ] ON") echo top ;;
-           "Monitor [ eDP-2 ] ON") echo bottom ;;
-         esac ;;
-      2) echo "both" ;;
-    esac
+    if have-gnome-monitor-config; then
+      internal_monitors="$(gnome-monitor-config list|grep -E "Monitor \\[ eDP-. \\] ON")"
+      case "$(echo "$internal_monitors"|grep -v -E "^$"|wc -l)" in
+        0) echo "none" ;;
+        1) case "$(echo "$internal_monitors"|grep ON)" in
+             "Monitor [ eDP-1 ] ON") echo top ;;
+             "Monitor [ eDP-2 ] ON") echo bottom ;;
+           esac ;;
+        2) echo "both" ;;
+      esac
+    else
+      status="$(mutter-helper status-internal)"
+      if [ "$status" = "both" ] && bottom_backlight_is_off; then
+        echo top
+      else
+        echo "$status"
+      fi
+    fi
     ;;
   status)
     (
@@ -112,10 +362,23 @@ case "$1" in
     "$0" status-internal
     ;;
   toggle)
-    if gnome-monitor-config list | grep OFF | grep eDP > /dev/null; then
-      "$0" both
+    if have-gnome-monitor-config; then
+      if gnome-monitor-config list | grep OFF | grep eDP > /dev/null; then
+        "$0" both
+      else
+        "$0" top
+      fi
     else
-      "$0" top
+      status="$(mutter-helper status-internal)"
+      if [ "$status" = "both" ] && bottom_backlight_is_off; then
+        status=top
+      fi
+      case "$status" in
+        both) "$0" top ;;
+        top) "$0" both ;;
+        bottom) "$0" both ;;
+        *) "$0" both ;;
+      esac
     fi
     ;;
   set-tablet-mapping)
@@ -138,15 +401,16 @@ case "$1" in
     echo "${2:-80}" | suenv tee /sys/class/power_supply/BAT0/charge_control_end_threshold
     ;;
   sync-backlight)
-    cat "/sys/class/backlight/intel_backlight/brightness" |
-      suenv tee /sys/class/backlight/$backlight/brightness
+    value="$(cat "/sys/class/backlight/$source_backlight/brightness")"
+    sysfs_write "/sys/class/backlight/$backlight/brightness" \
+      "$(clamp_backlight_value "$value")"
     ;;
   set-kb-backlight)
     suenv python3 bk.py "$2"
     ;;
   watch-backlight)
     "$0" sync-backlight
-    while inotifywait -e modify /sys/class/backlight/intel_backlight/brightness ; do
+    while inotifywait -e modify "/sys/class/backlight/$source_backlight/brightness" ; do
       "$0" sync-backlight
     done
     ;;
