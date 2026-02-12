@@ -50,7 +50,7 @@ If you need an immediate solution or prefer full control, you can create a new i
 2. **Mirror your current repository**:
    ```bash
    # Clone your current repository as a bare repository
-   git clone --bare https://github.com/YOUR_USERNAME/YOUR_CURRENT_REPO.git temp-repo
+   git clone --bare https://github.com/YOUR_USERNAME/YOUR_REPO_NAME.git temp-repo
    
    # Push to the new repository
    cd temp-repo
