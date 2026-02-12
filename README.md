@@ -1,5 +1,7 @@
 # zenbook-duo-2023-ux8402v-linux
 
+> **Note**: If you forked this repository and want to detach it from the fork relationship, see [DETACHING_FROM_FORK.md](DETACHING_FROM_FORK.md) for guidance.
+
 Features:
 * brightness sync (any)
 * battery limiter (any)
