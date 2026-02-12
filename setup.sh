@@ -31,6 +31,11 @@ if [ ! -f "$REPO_DIR/brightness-sync.service" ]; then
   exit 1
 fi
 
+if [ ! -f "$REPO_DIR/add-battery-limiter.sh" ]; then
+  echo "add-battery-limiter.sh not found in $REPO_DIR"
+  exit 1
+fi
+
 echo "Installing packages..."
 apt-get update
 apt-get install -y inotify-tools python3-evdev python3-gi usbutils
@@ -96,5 +101,8 @@ systemctl enable --now duo-button.service
 
 # Best-effort: disable user service if it exists.
 sudo -u "$RUN_USER" systemctl --user disable --now duo-button.service >/dev/null 2>&1 || true
+
+echo "Installing battery limiter tray integration..."
+bash "$REPO_DIR/add-battery-limiter.sh"
 
 echo "Done. If the bottom display is missing, reboot once to re-enumerate DP-1."

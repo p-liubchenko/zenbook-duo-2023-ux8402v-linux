@@ -1,4 +1,4 @@
-# zenbook-duo-2024-ux8406ma-linux
+# zenbook-duo-2023-ux8402v-linux
 
 Features:
 * brightness sync (any)
@@ -87,7 +87,15 @@ For most linux distros there is an included systemd service file: `brightness-sy
 
 ## battery limiter
 
-Requires same sudo setup as for the brightness sync. Most likely you want to run `duo bat-limit` or `duo bat-limit 75` (where 75 is your desired threshold percentage, 80 is used if omited) once at the start of your desktop session.
+Requires same sudo setup as for the brightness sync. You can use safe/full modes or a custom percentage:
+
+```
+duo bat-safe
+duo bat-full
+duo bat-limit 75
+```
+
+`duo bat-limit` defaults to safe (80%).
 
 ## keyboard backlight control
 

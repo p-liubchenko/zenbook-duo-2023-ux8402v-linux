@@ -240,6 +240,27 @@ function clamp_backlight_value {
   echo "$value"
 }
 
+function resolve_bat_limit {
+  local arg="${1:-}"
+  case "$arg" in
+    ""|safe)
+      echo 80
+      return
+      ;;
+    full)
+      echo 100
+      return
+      ;;
+  esac
+
+  if [[ "$arg" =~ ^[0-9]+$ ]] && [ "$arg" -ge 1 ] && [ "$arg" -le 100 ]; then
+    echo "$arg"
+    return
+  fi
+
+  return 1
+}
+
 function external-display-connected {
   if have-gnome-monitor-config; then
     [ "$(gnome-monitor-config list|grep display-name|grep -v 'Built-in display'|wc -l)" != "0" ]
@@ -398,7 +419,18 @@ case "$1" in
     fi
     ;;
   bat-limit)
-    echo "${2:-80}" | suenv tee /sys/class/power_supply/BAT0/charge_control_end_threshold
+    limit="$(resolve_bat_limit "${2:-}")" || {
+      echo "Invalid battery limit: ${2:-}" >&2
+      echo "Usage: duo bat-limit [safe|full|1-100]" >&2
+      exit 1
+    }
+    echo "$limit" | suenv tee /sys/class/power_supply/BAT0/charge_control_end_threshold
+    ;;
+  bat-safe)
+    "$0" bat-limit safe
+    ;;
+  bat-full)
+    "$0" bat-limit full
     ;;
   sync-backlight)
     value="$(cat "/sys/class/backlight/$source_backlight/brightness")"
@@ -421,5 +453,5 @@ case "$1" in
       stdbuf -oL sed 's/[ )]//g' |
       xargs -I '{}' stdbuf -oL "$0" '{}'
     ;;
-  *) echo "Usage: duo <top|bottom|both|set-displays|toggle|status|set-tablet-mapping|bat-limit|sync-backlight|set-kb-backlight|watch-backlight|watch-rotation|watch-displays>"
+  *) echo "Usage: duo <top|bottom|both|set-displays|toggle|status|set-tablet-mapping|bat-limit|bat-safe|bat-full|sync-backlight|set-kb-backlight|watch-backlight|watch-rotation|watch-displays>"
 esac

@@ -3,7 +3,16 @@
 URL="github.com/p-e-w/argos"
 DIR=$(dirname "$0")
 
-$HOME/p/my-scripts/duo status
+bat_limit="$(cat /sys/class/power_supply/BAT0/charge_control_end_threshold 2>/dev/null)"
+if [ -n "$bat_limit" ]; then
+	echo "${bat_limit}%"
+else
+	$HOME/p/my-scripts/duo status
+fi
+echo "---"
+echo "battery: safe (80%) | terminal=false bash='duo bat-safe'"
+echo "battery: full (100%) | terminal=false bash='duo bat-full'"
+echo "battery: set 90% | terminal=false bash='duo bat-limit 90'"
 echo "---"
 echo "top    | terminal=false bash='duo top'"
 echo "both   | terminal=false bash='duo both'"
